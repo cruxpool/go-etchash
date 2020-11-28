@@ -395,6 +395,19 @@ func (c *cache) finalizer() {
 	}
 }
 
+// added for NiceHash GetShareDiff
+func (l *Light) computeMixDigest(blockNum uint64, hashNoNonce common.Hash, nonce uint64) (mixDigest common.Hash, result common.Hash) {
+	epochLength := calcEpochLength(blockNum, l.ecip1099FBlock)
+	epoch := calcEpoch(blockNum, epochLength)
+	cache := l.getCache(blockNum)
+	dagSize := datasetSize(epoch)
+	return cache.compute(uint64(dagSize), hashNoNonce, nonce)
+}
+
+func (l *Light) Compute(blockNum uint64, headerHash common.Hash, nonce uint64) (mixDigest common.Hash, result common.Hash) {
+	return l.computeMixDigest(blockNum, headerHash, nonce)
+}
+
 func (c *cache) compute(dagSize uint64, hash common.Hash, nonce uint64) (common.Hash, common.Hash) {
 	// ret := C.etchash_light_compute_internal(cache.ptr, C.uint64_t(dagSize), hashToH256(hash), C.uint64_t(nonce))
 	digest, result := hashimotoLight(dagSize, c.cache, hash.Bytes(), nonce)
@@ -418,13 +431,14 @@ type Light struct {
 }
 
 // Verify checks whether the block's nonce is valid.
-func (l *Light) Verify(block Block) bool {
+func (l *Light) VerifyShare(block Block, shareDiff *big.Int) (bool, bool, int64, common.Hash) {
+	zeroHash := common.Hash{}
 	// TODO: do etchash_quick_verify before getCache in order
 	// to prevent DOS attacks.
 	blockNum := block.NumberU64()
 	if blockNum >= epochLengthDefault*2048 {
 		log.Debug(fmt.Sprintf("block number %d too high, limit is %d", blockNum, epochLengthDefault*2048))
-		return false
+		return false, false, 0, zeroHash
 	}
 
 	difficulty := block.Difficulty()
@@ -435,7 +449,7 @@ func (l *Light) Verify(block Block) bool {
 	*/
 	if difficulty.Cmp(common.Big0) == 0 {
 		log.Debug("invalid block difficulty")
-		return false
+		return false, false, 0, zeroHash
 	}
 
 	epochLength := calcEpochLength(blockNum, l.ecip1099FBlock)
@@ -451,12 +465,19 @@ func (l *Light) Verify(block Block) bool {
 
 	// avoid mixdigest malleability as it's not included in a block's "hashNononce"
 	if block.MixDigest() != mixDigest {
-		return false
+		return false, false, 0, zeroHash
 	}
 
 	// The actual check.
-	target := new(big.Int).Div(maxUint256, difficulty)
-	return result.Big().Cmp(target) <= 0
+	blockTarget := new(big.Int).Div(maxUint256, difficulty)
+	shareTarget := new(big.Int).Div(maxUint256, shareDiff)
+	actualDiff := new(big.Int).Div(maxUint256, result.Big())
+	return result.Big().Cmp(shareTarget) <= 0, result.Big().Cmp(blockTarget) <= 0, actualDiff.Int64(), mixDigest
+}
+
+func (l *Light) Verify(block Block) bool {
+	_, ok, _, _ := l.VerifyShare(block, block.Difficulty())
+	return ok
 }
 
 func (l *Light) getCache(blockNum uint64) *cache {
