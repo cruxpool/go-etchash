@@ -482,16 +482,6 @@ func (l *Light) Verify(block Block) bool {
 	return ok
 }
 
-// compute() to get mixhash and result
-func (l *Light) Compute(blockNum uint64, hashNoNonce common.Hash, nonce uint64) (mixDigest common.Hash, result common.Hash) {
-	epochLength := calcEpochLength(blockNum, l.ecip1099FBlock)
-	epoch := calcEpoch(blockNum, epochLength)
-
-	cache := l.getCache(blockNum)
-	dagSize := datasetSize(epoch)
-	return cache.compute(uint64(dagSize), hashNoNonce, nonce)
-}
-
 func (l *Light) getCache(blockNum uint64) *cache {
 	var c *cache
 	epochLength := calcEpochLength(blockNum, l.ecip1099FBlock)
