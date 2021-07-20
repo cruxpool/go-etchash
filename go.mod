@@ -1,4 +1,4 @@
-module github.com/slashbinslashnoname/go-etchash
+module github.com/cruxpool/go-etchash
 
 go 1.15
 
